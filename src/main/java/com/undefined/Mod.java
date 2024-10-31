@@ -15,10 +15,10 @@ public class Mod implements Serializable {
 
     private List<String> dependents;
     private List<String> dependencies;
-    private final boolean isApi;
+    private boolean isApi;
 
     // Constructor
-    public Mod(String fileName, String name, String modid, LogicalSide side, String description, boolean isApi, List<String> dependents, List<String> dependencies, ModList modlist) {
+    public Mod(String fileName, String name, String modid, LogicalSide side, String description, boolean isApi, List<String> dependents, List<String> dependencies) {
         this.originalFileName = fileName;
         this.name = name;
         this.side = side;
@@ -56,7 +56,6 @@ public class Mod implements Serializable {
     public String fileName() {
         return this.originalFileName;
     }
-
 
     public String name() {
         return name;
@@ -139,6 +138,50 @@ public class Mod implements Serializable {
 
         Optional<Mod> modWeAreDependingOn = modList.getMod(modId);
         modWeAreDependingOn.ifPresent(mod -> mod.dependents.remove(this.modid));
+    }
+
+    public Editor edit() {
+        return new Editor(this);
+    }
+
+
+    public static class Editor {
+
+        private final Mod mod;
+
+        public Editor(Mod mod) {
+            this.mod = mod;
+        }
+
+        public Editor api(boolean status) {
+            this.mod.isApi = status;
+            return this;
+        }
+
+        public Editor description(String description) {
+            this.mod.description = description;
+            return this;
+        }
+
+        public Editor side(LogicalSide side) {
+            this.mod.side = side;
+            return this;
+        }
+
+        public Editor name(String name) {
+            this.mod.name = name;
+            return this;
+        }
+
+        public Editor modid(String modid) {
+            this.mod.modid = modid;
+            return this;
+        }
+
+        public Editor fileName(String fileName) {
+            this.mod.originalFileName = fileName;
+            return this;
+        }
     }
 
 

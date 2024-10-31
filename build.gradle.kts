@@ -10,5 +10,6 @@ repositories {
 }
 
 dependencies {
+    // Adding the toml4j library dependency
+    implementation("com.moandjiezana.toml:toml4j:0.7.2")
 }
-

@@ -4,9 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.logging.*;
 
 public class ModpackManager {
@@ -39,7 +37,7 @@ public class ModpackManager {
         this.modList = list;
     }
 
-    public void cleanModpack() {
+    public void clean() {
         List<DeletionParameter> excludedFiles = new ArrayList<>(modList.allMods().stream()
                 .map(m -> new DeletionParameter(filePath("mods/" + m.fileName() + ".jar"), false, false)).toList());
 
@@ -94,8 +92,53 @@ public class ModpackManager {
         }
     }
 
+    public void enableMod(String modid) {
+        enableMod(this.modList.getMod(modid).get());
+    }
+
+    public void disableMod(String modid) {
+        disableMod(this.modList.getMod(modid).get());
+    }
+
+    public void enableMod(Mod mod) {
+        re_enableMod(getModFile(mod));
+    }
+
+    public void disableMod(Mod mod) {
+        disableMod(getModFile(mod));
+    }
+
+    private File getModFile(Mod mod) {
+        File file = new File(this.modList.directory() + "/" + mod.fileName() + ".jar");
+        if(!file.exists()) {
+            file = new File(this.modList.directory() + "/" + mod.fileName() + ".jar.disabled");
+        }
+
+        if(!file.exists()) {
+            System.out.println("Could not find file for mod: " + mod.fileName());
+        }
+
+        return file;
+    }
+
+    private static void disableMod(File file) {
+        if (file.renameTo(new File(file.getAbsolutePath() + ".disabled"))) {
+            System.out.println("Disabled mod: " + file.getName());
+        }
+    }
+
+    private static void re_enableMod(File file) {
+        if (file.renameTo(new File(file.getAbsolutePath().replace(".disabled", "")))) {
+            //System.out.println("Re-enabled mod: " + file.getName());
+        }
+    }
+
     public void check() {
         this.modList.check();
+    }
+
+    public ModList getModList() {
+        return modList;
     }
 
     private DeletionParameter getDeletionParameterForFile(File file, List<DeletionParameter> deletionParameters) {

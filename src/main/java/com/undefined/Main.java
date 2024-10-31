@@ -19,7 +19,10 @@ public class Main {
                 "C:/Users/q0xn7/AppData/Roaming/PrismLauncher/instances/UnDefined 1.20.1/.minecraft",
                 modList
         );
-        
+
+        ProblemLocator problemLocator = new ProblemLocator(modpack);
+        problemLocator.run();
+
         modList.addMod(
                 "",
                 "",
@@ -29,7 +32,8 @@ public class Main {
                 false
         );
 
-        //modList.save("undefined");
+
+        //modList.save();
     }
 
 

@@ -1,6 +1,10 @@
 package com.undefined;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+
 import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -19,9 +23,9 @@ public class ModList {
         this.mods = new ArrayList<>();
     }
 
-    public ModList(String filename) throws IOException, ClassNotFoundException {
-        loadMods(filename);
+    public ModList(String filename) {
         this.name = filename;
+        loadMods();
     }
 
     public void setDirectory(String dir) {
@@ -47,9 +51,19 @@ public class ModList {
     public void addMod(String fileName, String name, String modid, LogicalSide side, String description, boolean isApi, List<String> dependents, List<String> dependencies) {
         if(fileName.isEmpty() || name.isEmpty() || modid.isEmpty()) return;
         if(this.containsMod(modid)) return;
-        Mod mod = new Mod(fileName, name, modid, side, description, isApi, dependents, dependencies, this);
+        Mod mod = new Mod(fileName, name, modid, side, description, isApi, dependents, dependencies);
         this.mods.add(mod);
         mod.initializeDependenciesAndDependents(this);
+    }
+
+    public void removeModByFileName(String fileName) {
+        if(fileName.isEmpty()) return;
+        removeMod(this.getModByFile(fileName).modid());
+    }
+
+    public void removeModByFileName(String fileName, boolean removeDependents) {
+        if(fileName.isEmpty()) return;
+        removeMod(this.getModByFile(fileName).modid(), removeDependents);
     }
 
     public void removeMod(String modid) {
@@ -175,6 +189,15 @@ public class ModList {
         return false;
     }
 
+    public Mod getModByFile(String filename) {
+        for(Mod mod : mods) {
+            if(mod.fileName().equals(filename)) {
+                return mod;
+            }
+        }
+        throw new RuntimeException("Mod not found " + filename);
+    }
+
     public Optional<Mod> getMod(String modid) {
         for(Mod mod : mods) {
             if(mod.modid().equals(modid)) {
@@ -184,22 +207,28 @@ public class ModList {
         return Optional.empty();
     }
 
-    public void save() throws IOException {
+    public void save() {
         save(this.name);
     }
 
-    public void save(String name) throws IOException {
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(Paths.get("src", "main", "resources", name + ".mods").toFile()))) {
-            oos.writeObject(mods);
+
+    public void save(String name) {
+        Gson gson = new Gson();
+        try (Writer writer = new FileWriter(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
+            gson.toJson(mods, writer); // Serialize the mods list to JSON
+        } catch (IOException e) {
+            System.err.println("Error saving mods: " + e.getMessage());
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private void loadMods(String name) throws IOException, ClassNotFoundException {
-        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(Paths.get("src", "main", "resources", name + ".mods").toFile()))) {
-            this.mods = (List<Mod>) ois.readObject();
-        } catch (FileNotFoundException e) {
-            this.mods =  new ArrayList<>();
+    // Method to load mods from a file in JSON format
+    public void loadMods() {
+        Gson gson = new Gson();
+        try (Reader reader = new FileReader(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
+            Type modListType = new TypeToken<List<Mod>>(){}.getType();
+            mods = gson.fromJson(reader, modListType); // Deserialize JSON to mods list
+        } catch (IOException e) {
+            System.err.println("Error loading mods: " + e.getMessage());
         }
     }
 
@@ -238,9 +267,34 @@ public class ModList {
 
     public void deleteExtraMods() {
         listExtraMods().forEach(m -> {
-            new File(this.srcDirectory + m).delete();
+            File mod = new File(this.srcDirectory + "/" + m);
+            if (mod.isDirectory()) {
+                deleteDirectory(mod);
+            } else {
+                mod.delete();
+            }
             System.out.println("Deleted '" + m + "'");
         });
+    }
+
+    private void deleteDirectory(File directory) {
+        if (directory.isDirectory()) {
+            File[] files = directory.listFiles();
+            if (files != null) { // listFiles can return null
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        deleteDirectory(file);
+                    } else {
+                        file.delete();
+                    }
+                }
+            }
+        }
+        directory.delete();
+    }
+
+    public void moveExtraMods() {
+        moveExtraMods(this.deleteDirectory);
     }
 
     public void moveExtraMods(String moveDirectory) {
@@ -294,6 +348,68 @@ public class ModList {
         return missingMods;
     }
 
+    public List<Mod> initializeExtraMods() {
+        List<Mod> extraMods = new ArrayList<>();
+
+        List<String> extraModFiles = listExtraMods();
+        if(extraModFiles.isEmpty()) return extraMods;
+
+        for(String modFile : extraModFiles) {
+            if(modFile.endsWith(".jar")) {
+                String modFilePath = this.srcDirectory + "/" + modFile;
+
+                String fileName = modFile.replace(".jar", "");
+                String modName = ModJarReader.extractModName(modFilePath);
+                String modid = ModJarReader.extractModId(modFilePath);
+                String description = ModJarReader.extractDescription(modFilePath);
+                List<String> dependencies = ModJarReader.extractMandatoryDependencies(modFilePath);
+                Mod mod = new Mod(fileName, modName, modid, LogicalSide.BOTH, description, false, null, dependencies);
+                extraMods.add(mod);
+                if(!this.containsMod(modid)) this.mods.add(mod);
+            }
+        }
+
+        for(Mod mod : extraMods) {
+            mod.initializeDependenciesAndDependents(this);
+        }
+
+        return extraMods;
+    }
+
+    public void printModInfo(String filename) {
+        extractModInfoByFileName(filename);
+    }
+
+    public void extractModInfoByFile(String filename) {
+        Mod mod = getModByFile(filename);
+        try {
+            ModJarReader.extractModInfo(ModJarReader.readModsTomlFromJar(this.srcDirectory + "/" + mod.fileName() + ".jar"));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    public void extractModInfoByID(String modid) {
+        getMod(modid).ifPresent(m -> {
+            try {
+                ModJarReader.extractModInfo(ModJarReader.readModsTomlFromJar(this.srcDirectory + "/" + getMod(modid).get().fileName() + ".jar"));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    public void extractModInfoByFileName(String fileName) {
+        try {
+            System.out.println("---------------------------------------------------");
+            ModJarReader.extractModInfo(ModJarReader.readModsTomlFromJar(this.srcDirectory + "/" + fileName + ".jar"));
+            System.out.println("---------------------------------------------------");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public int modCount() {
         return this.mods.size() + 1;
     }
@@ -343,6 +459,10 @@ public class ModList {
             e.printStackTrace();
             System.out.println("Failed to delete: '" + jarFileName + "'" + e.getMessage());
         }
+    }
+
+    public String directory() {
+        return srcDirectory;
     }
 
 }
