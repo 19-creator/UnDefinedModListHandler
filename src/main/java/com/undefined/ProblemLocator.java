@@ -2,6 +2,11 @@ package com.undefined;
 
 import java.util.*;
 
+/**
+ * This program is only effective when only one mod is causing the crash. Otherwise need to run the program in an opposite format where we
+ * enable mods until we find a mod that is crashing then exclude it and find the other mod running this program that is crashing in the scenario
+ * where there is 2 mods that are causing a crash
+ */
 public class ProblemLocator {
 
     private Scanner scanner;
@@ -57,9 +62,11 @@ public class ProblemLocator {
 
     public void run() {
         enableAllMods();
+        System.out.println("-----------------------------------");
         List<Mod> disabledMods = disableHalfOfEnabledMods();
         System.out.println("Disabled half of the mods");
-        boolean problemOccurred = askYesOrNo("Are you still experiencing the issue?");
+        System.out.println("-------");
+        boolean problemOccurred = askYesOrNo("Are you experiencing the issue?\n-----------------------------------");
 
         if (problemOccurred) {
             suspects.removeAll(disabledMods);
@@ -74,9 +81,11 @@ public class ProblemLocator {
     public int checkSuspects(int tries, int lastSuspectSize) {
         enableMods(suspects);
 
+        System.out.println("-----------------------------------");
         List<Mod> disabledSuspects = disableHalfOfSuspects();
+        System.out.println("-------");
         System.out.println("Disabled half of the suspects");
-        boolean problemOccurredAgain = askYesOrNo("Are you still experiencing the issue?");
+        boolean problemOccurredAgain = askYesOrNo("Are you experiencing the issue?\n-----------------------------------");
 
         if (problemOccurredAgain) {
             suspects.removeAll(disabledSuspects);
@@ -84,27 +93,49 @@ public class ProblemLocator {
             suspects = new ArrayList<>(disabledSuspects);
         }
 
-        if (!suspects.isEmpty() && lastSuspectSize != suspects.size()) {
+
+        if(suspects.isEmpty()) {
+            System.out.println("Failed to find mod. It might be caused by more than one mod");
+        } else if(suspects.size() != 1) {
             return checkSuspects(tries + 1, suspects.size());
         } else {
+            enableAllMods();
             System.out.println("Mods causing the problem: ");
-            disabledSuspects.forEach(s -> System.out.println("- " + s.fileName()));
-            return tries;
+            suspects.forEach(s -> System.out.println("- " + s.fileName()));
         }
+
+        return tries;
     }
 
     public boolean askYesOrNo(String question) {
         System.out.println(question);
         String answer = scanner.nextLine();
+
+        // Check for the quit command
+        if (answer.equalsIgnoreCase("quit")) {
+            enableMods(suspects);
+            System.out.println("Exiting the program.");
+            System.exit(0); // Terminate the program
+        }
+
+        // Validate the answer
         while (!(answer.equalsIgnoreCase("yes") || answer.equalsIgnoreCase("y") ||
                 answer.equalsIgnoreCase("true") || answer.equalsIgnoreCase("no") ||
                 answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("false"))) {
-            System.out.println("Please answer 'yes' or 'no'.");
+            System.out.println("Please answer 'yes' or 'no', or type 'quit' to exit.");
             answer = scanner.nextLine();
+
+            // Check for the quit command again
+            if (answer.equalsIgnoreCase("quit")) {
+                System.out.println("Exiting the program.");
+                System.exit(0); // Terminate the program
+            }
         }
+
         return answer.equalsIgnoreCase("yes") || answer.equalsIgnoreCase("y") ||
                 answer.equalsIgnoreCase("true");
     }
+
 
     private List<Mod> enableWithDependencies(Mod mod) {
         return enableWithDependencies(mod, new HashSet<>());
@@ -137,33 +168,28 @@ public class ProblemLocator {
         int amount = mods.size();
         if (amount == 0) return new ArrayList<>();
 
-        int target = Math.round(amount / 2f);
+        int target = Math.round((amount / 2f));
         List<Mod> disabledThisRun = new ArrayList<>();
 
         for (int i = 0; i < target && i < mods.size(); i++) {
-            disabledThisRun.addAll(disableWithDependenciesAndDependents(mods.get(i)));
+            disabledThisRun.addAll(disableWithDependents(mods.get(i)));
         }
 
         return disabledThisRun;
     }
 
-    private List<Mod> disableWithDependenciesAndDependents(Mod mod) {
-        return disableWithDependenciesAndDependents(mod, new HashSet<>());
+    private List<Mod> disableWithDependents(Mod mod) {
+        return disableWithDependents(mod, new HashSet<>());
     }
 
-    private List<Mod> disableWithDependenciesAndDependents(Mod mod, Set<Mod> visitedMods) {
+    private List<Mod> disableWithDependents(Mod mod, Set<Mod> visitedMods) {
         if (isDisabled(mod) || visitedMods.contains(mod)) return new ArrayList<>();
         visitedMods.add(mod);
 
         List<Mod> disabledMods = new ArrayList<>();
         for (String dependentID : mod.dependents()) {
             var foundMod = this.modpack.getModList().getMod(dependentID);
-            foundMod.ifPresent(value -> disabledMods.addAll(disableWithDependenciesAndDependents(value, visitedMods)));
-        }
-
-        for (String dependencyID : mod.dependencies()) {
-            var foundMod = this.modpack.getModList().getMod(dependencyID);
-            foundMod.ifPresent(value -> disabledMods.addAll(disableWithDependenciesAndDependents(value, visitedMods)));
+            foundMod.ifPresent(value -> disabledMods.addAll(disableWithDependents(value, visitedMods)));
         }
 
         disable(mod);
@@ -196,10 +222,10 @@ public class ProblemLocator {
     }
 
     private void enableMods(List<Mod> mods) {
-        mods.forEach(this::enable);
+        mods.forEach(this::enableWithDependencies);
     }
 
     private void enableAllMods() {
-        this.modpack.getModList().allMods().forEach(this.modpack::enableMod);
+        this.modpack.getModList().allMods().forEach(m -> this.modpack.enableMod(m));
     }
 }

@@ -20,8 +20,10 @@ public class Main {
                 modList
         );
 
-        ProblemLocator problemLocator = new ProblemLocator(modpack);
-        problemLocator.run();
+//        ProblemLocator problemLocator = new ProblemLocator(modpack);
+//        problemLocator.run();
+
+        modpack.clean();
 
         modList.addMod(
                 "",

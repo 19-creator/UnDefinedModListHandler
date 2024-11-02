@@ -5,7 +5,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.logging.*;
+
+import static com.undefined.LogicalSide.BOTH;
+import static com.undefined.LogicalSide.SERVER;
 
 public class ModpackManager {
 
@@ -54,6 +58,26 @@ public class ModpackManager {
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Error cleaning modpack", e);
         }
+    }
+
+    public List<Mod> fetchMods(Predicate<Mod> filter) {
+        return this.modList.allMods().stream().filter(filter).toList();
+    }
+
+    public List<Mod> fetchMods(String... tags) {
+        return fetchMods(m -> m.hasTag(tags));
+    }
+
+    public List<Mod> fetchServerModpack() {
+        return fetchMods(m -> m.getSide() == BOTH || m.getSide() == SERVER);
+    }
+
+    public double percentOfMods(Predicate<Mod> filter) {
+        return Math.round(((double) fetchMods(filter).size() / this.modList.allMods().size()) * 100.0 * 100.0)/100.0;
+    }
+
+    public int numberOfModsWith(Predicate<Mod> filter) {
+        return fetchMods(filter).size();
     }
 
     private void deleteFilesRecursive(File directory, List<DeletionParameter> deletionParameters) throws IOException {
@@ -122,15 +146,20 @@ public class ModpackManager {
     }
 
     private static void disableMod(File file) {
+        if(file.getName().contains(".disabled")) return;
+
         if (file.renameTo(new File(file.getAbsolutePath() + ".disabled"))) {
             System.out.println("Disabled mod: " + file.getName());
         }
     }
 
     private static void re_enableMod(File file) {
-        if (file.renameTo(new File(file.getAbsolutePath().replace(".disabled", "")))) {
-            //System.out.println("Re-enabled mod: " + file.getName());
-        }
+        if(!file.getName().contains(".disabled")) return;
+        file.renameTo(new File(file.getAbsolutePath().replace(".disabled", "")));
+    }
+
+    public void enableAllMods() {
+        this.modList.allMods().forEach(this::enableMod);
     }
 
     public void check() {
@@ -155,4 +184,8 @@ public class ModpackManager {
     }
 
     public record DeletionParameter(String name, boolean isDirectory, boolean deleteContents) {}
+
+    public int size() {
+        return this.modList.allMods().size();
+    }
 }

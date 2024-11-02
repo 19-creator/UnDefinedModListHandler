@@ -75,101 +75,86 @@ public class ModList {
     }
 
     private void removeMod(String modid, boolean removeDependents, int iterations) {
-        Optional<Mod> optional = getMod(modid);
-        if(optional.isEmpty()) {
-            System.out.println("Did not remove mod '" + modid + "' " + "because it does not exist");
-            return;
-        }
-        Mod modToRemove = optional.get();
-        if(!removeDependents && !modToRemove.dependents().isEmpty()) {
-            System.out.println("Cannot remove mod '" + modToRemove.modid() + "'" + " because the following mods depend on it");
-
-            for(String dependent : modToRemove.dependents()) {
-                System.out.println("- " + dependent);
-            }
+        Optional<Mod> optionalMod = getMod(modid);
+        if (optionalMod.isEmpty()) {
+            System.out.println("Did not remove mod '" + modid + "' because it does not exist");
             return;
         }
 
-        mods.remove(modToRemove); // Remove the mod from the modlist before we start removing other things
-        if(iterations == 0) System.out.println("Removed '" + modToRemove.modid() + "' Iterations: " + iterations);
+        Mod modToRemove = optionalMod.get();
 
-        if(removeDependents && !modToRemove.dependents().isEmpty()) {
-            for(String dependent : modToRemove.dependents()) {
-                modToRemove.removeDependent(dependent, this); // This removes mod from our dependent list and the mod's dependencies list
-                removeMod(dependent, true, iterations + 1); // Remove all the mod dependents from modlist too if flag is true
-            }
+        // Check if removal is blocked due to active dependents and the flag
+        if (!removeDependents && !modToRemove.dependents().isEmpty()) {
+            System.out.println("Cannot remove mod '" + modToRemove.modid() + "' because the following mods depend on it:");
+            modToRemove.dependents().forEach(dependent -> System.out.println("- " + dependent));
+            return;
         }
 
-        // Remove our dependencies from the mod list if they are just an unused API
-        if (!modToRemove.dependencies().isEmpty()) {
-            for (String dependency : modToRemove.dependencies()) {
-                Optional<Mod> modOptional = getMod(dependency);
+        // Remove mod before processing dependents or dependencies
+        mods.remove(modToRemove);
+        System.out.println("Removed '" + modToRemove.modid() + "' Iterations: " + iterations);
 
-                if (modOptional.isPresent()) {
-                    Mod dependencyMod = modOptional.get();
-                    boolean isApi = dependencyMod.isApi();
-                    boolean hasNoOtherDependents = dependencyMod.dependents().size() == 1;
-                    boolean isDependentOfModToRemove = dependencyMod.dependents().contains(modid);
+        // Recursively remove dependents if allowed
+        if (removeDependents) {
+            modToRemove.dependents().forEach(dependent -> {
+                modToRemove.removeDependent(dependent, this);
+                removeMod(dependent, true, iterations + 1);
+            });
+        }
 
-                    if (isApi && hasNoOtherDependents && isDependentOfModToRemove) {
-                        modToRemove.removeDependency(dependency, this);
-                        removeMod(dependency, false, iterations + 1);
-                    } else {
-                        modToRemove.removeDependency(dependency, this);
-                    }
+        // Remove unused API dependencies
+        modToRemove.dependencies().forEach(dependency -> {
+            getMod(dependency).ifPresent(dependencyMod -> {
+                if (shouldRemoveApiDependency(dependencyMod, modid)) {
+                    modToRemove.removeDependency(dependency, this);
+                    removeMod(dependency, false, iterations + 1);
                 }
-            }
-        }
+            });
+        });
 
-        if(iterations > 0) System.out.println("Removed '" + modToRemove.modid() + "' Iterations: " + iterations);
-        if(isFileDeletionEnabled) {
+        // Optionally delete mod file
+        if (isFileDeletionEnabled) {
             moveJarFile(this.srcDirectory, modToRemove.fileName(), this.deleteDirectory);
         }
     }
 
+    private boolean shouldRemoveApiDependency(Mod dependencyMod, String modid) {
+        return dependencyMod.isApi()
+                && dependencyMod.dependents().size() == 1
+                && dependencyMod.dependents().contains(modid);
+    }
+
+
     public void addDependencyToMod(String dependencyId, String modId) {
-        boolean dependencyPresent = containsMod(dependencyId);
-        Optional<Mod> mod = getMod(modId);
-
-        if (!dependencyPresent && mod.isEmpty()) {
-            System.out.println("Dependency '" + dependencyId + "' and mod '" + modId + "' were not found");
-            return;
-        }
-
-        if (!dependencyPresent) {
-            System.out.println("Dependency '" + dependencyId + "' not found");
-            return;
-        }
-
-        if (mod.isEmpty()) {
-            System.out.println("Mod '" + modId + "' not found");
-            return;
-        }
-
-        mod.get().addDependency(dependencyId, this);
+        validateDependencyAndMod(dependencyId, modId).ifPresent(value -> value.addDependency(dependencyId, this));
     }
 
     public void removeDependencyFromMod(String dependencyId, String modId) {
+        validateDependencyAndMod(dependencyId, modId).ifPresent(value -> value.removeDependency(dependencyId, this));
+    }
+
+    private Optional<Mod> validateDependencyAndMod(String dependencyId, String modId) {
         boolean dependencyPresent = containsMod(dependencyId);
         Optional<Mod> mod = getMod(modId);
 
         if (!dependencyPresent && mod.isEmpty()) {
             System.out.println("Dependency '" + dependencyId + "' and mod '" + modId + "' were not found");
-            return;
+            return Optional.empty();
         }
 
         if (!dependencyPresent) {
             System.out.println("Dependency '" + dependencyId + "' not found");
-            return;
+            return Optional.empty();
         }
 
         if (mod.isEmpty()) {
             System.out.println("Mod '" + modId + "' not found");
-            return;
+            return Optional.empty();
         }
 
-        mod.get().removeDependency(dependencyId, this);
+        return mod;
     }
+
 
     public boolean containsMod(String modid) {
         for(Mod mod : mods) {
@@ -298,9 +283,7 @@ public class ModList {
     }
 
     public void moveExtraMods(String moveDirectory) {
-        listExtraMods().forEach(m -> {
-            moveJarFile(this.srcDirectory, m, moveDirectory);
-        });
+        listExtraMods().forEach(m -> moveJarFile(this.srcDirectory, m, moveDirectory));
     }
 
     public void check() {

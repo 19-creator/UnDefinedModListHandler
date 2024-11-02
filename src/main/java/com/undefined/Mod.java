@@ -2,6 +2,7 @@ package com.undefined;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,6 +18,8 @@ public class Mod implements Serializable {
     private List<String> dependencies;
     private boolean isApi;
 
+    private List<String> tags;
+
     // Constructor
     public Mod(String fileName, String name, String modid, LogicalSide side, String description, boolean isApi, List<String> dependents, List<String> dependencies) {
         this.originalFileName = fileName;
@@ -27,6 +30,7 @@ public class Mod implements Serializable {
         this.dependents = (dependents != null && !dependents.isEmpty()) ? new ArrayList<>(dependents) : new ArrayList<>();
         this.dependencies = (dependencies != null && !dependencies.isEmpty()) ? new ArrayList<>(dependencies) : new ArrayList<>();
         this.isApi = isApi;
+        this.tags = new ArrayList<>();
     }
 
     public void initializeDependenciesAndDependents(ModList modlist) {
@@ -83,6 +87,32 @@ public class Mod implements Serializable {
 
     public boolean isApi() {
         return isApi;
+    }
+
+    public List<String> getTags() {
+        return this.tags;
+    }
+
+    public void addTag(String... tag) {
+        if(this.tags == null) this.tags = new ArrayList<>();
+
+        for(String s : tag) {
+            String correctedTag = s.toLowerCase();
+            if(!this.tags.contains(correctedTag)) {
+                this.tags.add(correctedTag);
+            }
+        }
+    }
+
+    public void removeTag(String tag) {
+        String correctedTag = tag.toLowerCase();
+        this.tags.remove(correctedTag);
+    }
+
+    public boolean hasTag(String... tag) {
+        if (tag == null || this.tags == null) return false;
+        return Arrays.stream(tag)
+                .allMatch(_tag -> this.tags.contains(_tag.toLowerCase()));
     }
 
     public void addDependent(String modId, ModList modList) {
