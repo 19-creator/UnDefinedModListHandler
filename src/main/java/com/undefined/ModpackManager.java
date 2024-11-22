@@ -8,8 +8,7 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.logging.*;
 
-import static com.undefined.LogicalSide.BOTH;
-import static com.undefined.LogicalSide.SERVER;
+import static com.undefined.LogicalSide.*;
 
 public class ModpackManager {
 
@@ -42,16 +41,17 @@ public class ModpackManager {
     }
 
     public void clean() {
-        List<DeletionParameter> excludedFiles = new ArrayList<>(modList.allMods().stream()
-                .map(m -> new DeletionParameter(filePath("mods/" + m.fileName() + ".jar"), false, false)).toList());
+        List<ExclusionParameter> excludedFiles = new ArrayList<>(modList.allMods().stream()
+                .map(m -> new ExclusionParameter(filePath("mods/" + m.fileName() + ".jar"), false, false)).toList());
 
-        excludedFiles.add(new DeletionParameter(filePath("config"), true, true));
-        excludedFiles.add(new DeletionParameter(filePath("mods"), true, true));
-        excludedFiles.add(new DeletionParameter(filePath("shaderpacks"), true, false));
-        excludedFiles.add(new DeletionParameter(filePath("resourcepacks"), true, false));
-        excludedFiles.add(new DeletionParameter(filePath("options.txt"), false, false));
-        excludedFiles.add(new DeletionParameter(filePath("config/oculus.properties"), false, false));
-        excludedFiles.add(new DeletionParameter(filePath("config/embeddium-options.json"), false, false));
+        excludedFiles.add(new ExclusionParameter(filePath("config"), true, true));
+        excludedFiles.add(new ExclusionParameter(filePath("mods"), true, true));
+        excludedFiles.add(new ExclusionParameter(filePath("shaderpacks"), true, false));
+        excludedFiles.add(new ExclusionParameter(filePath("resourcepacks"), true, false));
+        excludedFiles.add(new ExclusionParameter(filePath("options.txt"), false, false));
+        excludedFiles.add(new ExclusionParameter(filePath("config/oculus.properties"), false, false));
+        excludedFiles.add(new ExclusionParameter(filePath("config/embeddium-options.json"), false, false));
+        excludedFiles.add(new ExclusionParameter(filePath("config/tacz/custom/create_guns"), true, false));
 
         try {
             deleteFilesRecursive(modpackDirectory.toFile(), excludedFiles);
@@ -72,6 +72,10 @@ public class ModpackManager {
         return fetchMods(m -> m.getSide() == BOTH || m.getSide() == SERVER);
     }
 
+    public List<Mod> fetchClientModpack() {
+        return fetchMods(m -> m.getSide() == BOTH || m.getSide() == CLIENT);
+    }
+
     public double percentOfMods(Predicate<Mod> filter) {
         return Math.round(((double) fetchMods(filter).size() / this.modList.allMods().size()) * 100.0 * 100.0)/100.0;
     }
@@ -80,20 +84,27 @@ public class ModpackManager {
         return fetchMods(filter).size();
     }
 
-    private void deleteFilesRecursive(File directory, List<DeletionParameter> deletionParameters) throws IOException {
+    public void informUsedTags() {
+        Set<String> usedTags = new HashSet<>();
+        modList.allMods().forEach(m -> usedTags.addAll(m.getTags()));
+        System.out.println("Tags: ");
+        usedTags.forEach(System.out::println);
+    }
+
+    private void deleteFilesRecursive(File directory, List<ExclusionParameter> exclusionParameters) throws IOException {
         File[] files = directory.listFiles();
         if (files == null) {
             return;
         }
 
         for (File file : files) {
-            DeletionParameter parameter = getDeletionParameterForFile(file, deletionParameters);
+            ExclusionParameter parameter = getDeletionParameterForFile(file, exclusionParameters);
 
             if (parameter != null) {
                 if (parameter.isDirectory()) {
                     if (parameter.deleteContents()) {
                         LOGGER.log(Level.INFO, "Deleting contents of directory: {0}", file.getAbsolutePath());
-                        deleteFilesRecursive(file, deletionParameters);
+                        deleteFilesRecursive(file, exclusionParameters);
                         if (Objects.requireNonNull(file.list()).length == 0 && file.delete()) {
                             LOGGER.log(Level.INFO, "Deleted empty directory: {0}", file.getAbsolutePath());
                         }
@@ -101,7 +112,7 @@ public class ModpackManager {
                 }
             } else {
                 if (file.isDirectory()) {
-                    deleteFilesRecursive(file, deletionParameters);
+                    deleteFilesRecursive(file, exclusionParameters);
                     if (Objects.requireNonNull(file.list()).length == 0 && file.delete()) {
                         LOGGER.log(Level.INFO, "Deleted empty directory: {0}", file.getAbsolutePath());
                     }
@@ -170,8 +181,8 @@ public class ModpackManager {
         return modList;
     }
 
-    private DeletionParameter getDeletionParameterForFile(File file, List<DeletionParameter> deletionParameters) {
-        for (DeletionParameter parameter : deletionParameters) {
+    private ExclusionParameter getDeletionParameterForFile(File file, List<ExclusionParameter> exclusionParameters) {
+        for (ExclusionParameter parameter : exclusionParameters) {
             if (file.getAbsolutePath().equals(parameter.name())) {
                 return parameter;
             }
@@ -183,7 +194,7 @@ public class ModpackManager {
         return this.modpackDirectory.resolve(path).toString();
     }
 
-    public record DeletionParameter(String name, boolean isDirectory, boolean deleteContents) {}
+    public record ExclusionParameter(String name, boolean isDirectory, boolean deleteContents) {}
 
     public int size() {
         return this.modList.allMods().size();

@@ -15,7 +15,8 @@ public class ModJarReader {
         ZipEntry modsTomlEntry = jarFile.getEntry("META-INF/mods.toml");
 
         if (modsTomlEntry == null) {
-            throw new FileNotFoundException("mods.toml not found in " + jarFilePath);
+            System.out.println("Could not find META-INF/mods.toml for jar " + jarFilePath);
+            return null;
         }
 
         // Reading the mods.toml file content
@@ -34,6 +35,7 @@ public class ModJarReader {
 
     // Method to extract and print mod information from mods.toml
     public static void extractModInfo(String tomlContent) {
+        if(tomlContent == null) return;
         Toml toml = new Toml().read(tomlContent);
 
         // Handle modLoader as both a table and a string
@@ -95,6 +97,7 @@ public class ModJarReader {
     public static String extractModName(String path) {
         try {
             String tomlContent = readModsTomlFromJar(path);
+            if(tomlContent == null) return null;
             Toml toml = new Toml().read(tomlContent);
             List<Toml> mods = toml.getTables("mods");
             if (mods != null && !mods.isEmpty()) {
@@ -110,6 +113,7 @@ public class ModJarReader {
     public static String extractModId(String path) {
         try {
             String tomlContent = readModsTomlFromJar(path);
+            if(tomlContent == null) return null;
             Toml toml = new Toml().read(tomlContent);
             List<Toml> mods = toml.getTables("mods");
             if (mods != null && !mods.isEmpty()) {
@@ -126,6 +130,7 @@ public class ModJarReader {
         List<String> mandatoryDeps = new ArrayList<>();
         try {
             String tomlContent = readModsTomlFromJar(path);
+            if(tomlContent == null) return null;
             Toml toml = new Toml().read(tomlContent);
 
             // Get all mods
@@ -133,17 +138,20 @@ public class ModJarReader {
             if (mods != null && !mods.isEmpty()) {
                 for (Toml mod : mods) {
                     String modId = mod.getString("modId");
-                    String dependenciesKey = "dependencies." + modId; // Key for dependencies for this mod
 
-                    // Get dependencies for this mod
-                    List<Toml> dependencies = toml.getTables(dependenciesKey);
+                    // Try both quoted and unquoted keys
+                    List<Toml> dependencies = toml.getTables("dependencies." + modId);
+                    if (dependencies == null) {
+                        dependencies = toml.getTables("dependencies.\"" + modId + "\"");
+                    }
+
                     if (dependencies != null) {
                         for (Toml dependency : dependencies) {
                             String depModId = dependency.getString("modId");
                             Boolean mandatory = dependency.getBoolean("mandatory");
 
                             // Add only mandatory dependencies, excluding "minecraft" and "forge"
-                            if (mandatory && !depModId.equals("minecraft") && !depModId.equals("forge")) {
+                            if (mandatory != null && mandatory && !depModId.equals("minecraft") && !depModId.equals("forge")) {
                                 mandatoryDeps.add(depModId);
                             }
                         }
@@ -158,10 +166,12 @@ public class ModJarReader {
 
 
 
+
     // Method to extract mod description
     public static String extractDescription(String path) {
         try {
             String tomlContent = readModsTomlFromJar(path);
+            if(tomlContent == null) return null;
             Toml toml = new Toml().read(tomlContent);
             List<Toml> mods = toml.getTables("mods");
             if (mods != null && !mods.isEmpty()) {

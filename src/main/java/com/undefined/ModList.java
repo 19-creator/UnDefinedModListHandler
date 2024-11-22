@@ -1,7 +1,9 @@
 package com.undefined;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -10,20 +12,25 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class ModList {
 
     private String name;
     private List<Mod> mods;
+    private Set<String> lastUpdatedMods;
     private String srcDirectory;
     private String deleteDirectory;
     private boolean isFileDeletionEnabled;
 
     public ModList() {
+        this.name = null;
         this.mods = new ArrayList<>();
+        this.lastUpdatedMods = new HashSet<>();
     }
 
     public ModList(String filename) {
+        this();
         this.name = filename;
         loadMods();
     }
@@ -64,6 +71,12 @@ public class ModList {
     public void removeModByFileName(String fileName, boolean removeDependents) {
         if(fileName.isEmpty()) return;
         removeMod(this.getModByFile(fileName).modid(), removeDependents);
+    }
+
+    public void removeMod(String... modids) {
+        for(String modid : modids) {
+            removeMod(modid);
+        }
     }
 
     public void removeMod(String modid) {
@@ -109,6 +122,7 @@ public class ModList {
                     modToRemove.removeDependency(dependency, this);
                     removeMod(dependency, false, iterations + 1);
                 }
+                dependencyMod.removeDependent(modToRemove.modid(), this); // Remove mod from dependents list on its dependencies
             });
         });
 
@@ -196,27 +210,6 @@ public class ModList {
         save(this.name);
     }
 
-
-    public void save(String name) {
-        Gson gson = new Gson();
-        try (Writer writer = new FileWriter(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
-            gson.toJson(mods, writer); // Serialize the mods list to JSON
-        } catch (IOException e) {
-            System.err.println("Error saving mods: " + e.getMessage());
-        }
-    }
-
-    // Method to load mods from a file in JSON format
-    public void loadMods() {
-        Gson gson = new Gson();
-        try (Reader reader = new FileReader(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
-            Type modListType = new TypeToken<List<Mod>>(){}.getType();
-            mods = gson.fromJson(reader, modListType); // Deserialize JSON to mods list
-        } catch (IOException e) {
-            System.err.println("Error loading mods: " + e.getMessage());
-        }
-    }
-
     /**
      * @return List of files that exist in the mod directory but not on the modlist
      */
@@ -288,7 +281,7 @@ public class ModList {
 
     public void check() {
         List<String> missingMods = missingMods();
-        List<String> extraMods = listExtraMods();
+        List<String> extraMods = listExtraMods().stream().filter(s -> s.contains(".jar")).toList();
         boolean missingModsEmpty = missingMods().isEmpty();
         boolean extraModsEmpty = extraMods.isEmpty();
         if(missingModsEmpty && extraModsEmpty) {
@@ -359,8 +352,53 @@ public class ModList {
         return extraMods;
     }
 
+    public List<Mod> updateMods() {
+        return updateMods(false);
+    }
+
+    public List<Mod> updateMods(boolean merge) {
+        List<Mod> updatedMods = new ArrayList<>();
+        List<String> extraModFiles = listExtraMods();
+
+        if(extraModFiles.isEmpty()) return updatedMods;
+
+        for(String modFile : extraModFiles) {
+            if(modFile.endsWith(".jar")) {
+                String modFilePath = this.srcDirectory + "/" + modFile;
+                String modid = ModJarReader.extractModId(modFilePath);
+                getMod(modid).ifPresent(m -> {
+                    String fileName = modFile.replace(".jar", "");
+                    String modName = ModJarReader.extractModName(modFilePath);
+                    String description = ModJarReader.extractDescription(modFilePath);
+                    String oldFileName = m.fileName();
+
+                    m.edit()
+                            .name(modName)
+                            .fileName(fileName)
+                            .description(description)
+                    ;
+
+                    updatedMods.add(m);
+                    delete(oldFileName);
+                    System.out.println("Updated " + "'" + oldFileName + ".jar'" + " to '" + fileName + "'");
+                });
+            }
+        }
+
+        var updated = updatedMods.stream().map(Mod::modid).toList();
+
+        if(merge) {
+            this.lastUpdatedMods.addAll(updated);
+        } else {
+            this.lastUpdatedMods = updatedMods.stream().map(Mod::modid).collect(Collectors.toSet());
+        }
+
+        return updatedMods;
+    }
+
+
     public void printModInfo(String filename) {
-        extractModInfoByFileName(filename);
+        extractModInfoByFile(filename);
     }
 
     public void extractModInfoByFile(String filename) {
@@ -383,15 +421,6 @@ public class ModList {
         });
     }
 
-    public void extractModInfoByFileName(String fileName) {
-        try {
-            System.out.println("---------------------------------------------------");
-            ModJarReader.extractModInfo(ModJarReader.readModsTomlFromJar(this.srcDirectory + "/" + fileName + ".jar"));
-            System.out.println("---------------------------------------------------");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
 
     public int modCount() {
         return this.mods.size() + 1;
@@ -401,9 +430,12 @@ public class ModList {
         return this.mods;
     }
 
-    public static void delete(String filename) {
+    public void delete(String filename) {
+        if (!filename.endsWith(".jar")) {
+            filename += ".jar";
+        }
         try {
-            if(Paths.get("src", "main", "resources", filename + ".mods").toFile().delete()) System.out.println("Deleted " + filename);
+            if(Paths.get(this.srcDirectory, filename).toFile().delete()) System.out.println("Deleted " + filename);
         } catch (Exception ignored) {}
     }
 
@@ -447,5 +479,47 @@ public class ModList {
     public String directory() {
         return srcDirectory;
     }
+
+    private static class SavedData {
+        List<Mod> mods;
+        Set<String> lastUpdatedMods;
+
+        SavedData(List<Mod> mods, Set<String> lastUpdatedMods) {
+            this.mods = mods;
+            this.lastUpdatedMods = lastUpdatedMods;
+        }
+    }
+
+
+    public void save(String name) {
+        // Create a Gson instance with pretty printing enabled
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        SavedData data = new SavedData(mods, lastUpdatedMods); // Wrap mods and lastUpdatedMods
+        try (Writer writer = new FileWriter(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
+            gson.toJson(data, writer); // Serialize the SavedData object with formatting
+        } catch (IOException e) {
+            System.err.println("Error saving mods: " + e.getMessage());
+        }
+    }
+
+    // Load method to deserialize both 'mods' and 'lastUpdatedMods' from JSON
+    public void loadMods() {
+        Gson gson = new Gson();
+        try (Reader reader = new FileReader(Paths.get("src", "main", "resources", name + ".mods").toFile())) {
+            JsonReader jsonReader = new JsonReader(reader);
+            jsonReader.setLenient(true); // Enable lenient mode
+            // Define the Type for SavedData
+            Type modListType = new TypeToken<SavedData>(){}.getType();
+            SavedData data = gson.fromJson(jsonReader, modListType); // Deserialize JSON to SavedData
+            // Extract mods and lastUpdatedMods from the loaded data
+            this.mods = data.mods;
+            this.lastUpdatedMods = data.lastUpdatedMods;
+        } catch (IOException e) {
+            System.err.println("Error loading mods: " + e.getMessage());
+        }
+    }
+
+
+
 
 }
